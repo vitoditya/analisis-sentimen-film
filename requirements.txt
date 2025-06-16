@@ -1,6 +1,6 @@
-streamlit
-scikit-learn
-tensorflow
-joblib
-nltk
-numpy
+streamlit==1.35.0
+scikit-learn==1.4.2
+tensorflow-cpu==2.13.0
+joblib==1.4.2
+nltk==3.8.1
+numpy==1.24.4
