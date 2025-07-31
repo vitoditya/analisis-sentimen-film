@@ -35,18 +35,15 @@ vectorizer = joblib.load("tfidf_vectorizer.pkl")
 with open("cnn_tokenizer.pkl", "rb") as f:
     tokenizer = pickle.load(f)
 
-MAXLEN = 200  # Harus sesuai training CNN
+MAXLEN = 250  # Harus sesuai training CNN
 
 # --- Dummy Accuracy (bisa ganti ke hasil evaluasi asli) ---
 accuracy = {
     "Naive Bayes": 0.85,
     "SVM": 0.88,
-    "CNN": 0.90
+    "CNN": 0.88
 }
 
-# --- Inisialisasi session_state untuk histori ---
-if "history" not in st.session_state:
-    st.session_state.history = []
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="Analisis Sentimen Film", layout="centered")
@@ -70,30 +67,10 @@ with col1:
             else:  # CNN
                 sequence = tokenizer.texts_to_sequences([cleaned])
                 padded = pad_sequences(sequence, maxlen=MAXLEN)
-                result = np.argmax(model_cnn.predict(padded), axis=1)[0]
+                pred_prob = model_cnn.predict(padded)[0][0]
+                result = 1 if pred_prob >= 0.5 else 0
+
 
             label = "Positif" if result == 1 else "Negatif"
             st.success(f"Hasil Sentimen: **{label}**")
 
-            # Simpan ke histori
-            st.session_state.history.append({
-                "Input": text_input,
-                "Model": model_choice,
-                "Sentimen": label
-            })
-
-with col2:
-    st.markdown("### 📊 Akurasi Model")
-    for model, acc in accuracy.items():
-        st.markdown(f"- **{model}**: {acc*100:.2f}%")
-
-    # Bar chart
-    df_acc = pd.DataFrame.from_dict(accuracy, orient='index', columns=['Akurasi'])
-    st.bar_chart(df_acc)
-
-# --- Riwayat ---
-if st.checkbox("📝 Tampilkan Riwayat Prediksi"):
-    if st.session_state.history:
-        st.dataframe(pd.DataFrame(st.session_state.history))
-    else:
-        st.info("Belum ada riwayat prediksi.")
