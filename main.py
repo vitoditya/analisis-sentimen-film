@@ -17,13 +17,19 @@ nltk.download('stopwords')
 stop_words = set(stopwords.words('english'))
 stemmer = PorterStemmer()
 
-# --- Preprocessing ---
-def preprocess(text):
+# --- Preprocessing untuk NB dan SVM (pakai TF-IDF) ---
+def preprocess_tfidf(text):
     text = re.sub(r'<.*?>', '', text)
     text = re.sub(r"[^a-zA-Z']", ' ', text).lower()
     tokens = text.split()
     tokens = [stemmer.stem(word) for word in tokens if word not in stop_words]
     return ' '.join(tokens)
+
+# --- Preprocessing untuk CNN (harus sesuai training CNN) ---
+def preprocess_cnn(text):
+    text = re.sub(r'<.*?>', '', text)
+    text = re.sub(r"[^a-zA-Z']", ' ', text).lower()
+    return text
 
 # --- Load All Models ---
 model_nb = joblib.load("naive_bayes_model.pkl")
@@ -44,7 +50,6 @@ accuracy = {
     "CNN": 0.88
 }
 
-
 # --- Streamlit UI ---
 st.set_page_config(page_title="Analisis Sentimen Film", layout="centered")
 st.title("🎬 Analisis Sentimen Ulasan Film")
@@ -59,18 +64,19 @@ with col1:
         if not text_input.strip():
             st.warning("Teks ulasan tidak boleh kosong.")
         else:
-            cleaned = preprocess(text_input)
-
             if model_choice in ["Naive Bayes", "SVM"]:
+                cleaned = preprocess_tfidf(text_input)
                 vectorized = vectorizer.transform([cleaned])
                 result = model_nb.predict(vectorized)[0] if model_choice == "Naive Bayes" else model_svm.predict(vectorized)[0]
+                label = "Positif" if result == 1 else "Negatif"
+                st.success(f"Hasil Sentimen: **{label}**")
+
             else:  # CNN
+                cleaned = preprocess_cnn(text_input)
                 sequence = tokenizer.texts_to_sequences([cleaned])
                 padded = pad_sequences(sequence, maxlen=MAXLEN)
                 pred_prob = model_cnn.predict(padded)[0][0]
                 result = 1 if pred_prob >= 0.5 else 0
-
-
-            label = "Positif" if result == 1 else "Negatif"
-            st.success(f"Hasil Sentimen: **{label}**")
-
+                label = "Positif" if result == 1 else "Negatif"
+                st.success(f"Hasil Sentimen: **{label}**")
+                st.info(f"Probabilitas Positif: {pred_prob:.2f}")
