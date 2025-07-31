@@ -13,6 +13,7 @@ from nltk.stem import PorterStemmer, WordNetLemmatizer
 from nltk.tokenize import TreebankWordTokenizer, word_tokenize
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import load_model
+from sklearn.exceptions import NotFittedError
 
 # --- Setup ---
 nltk.download('punkt', quiet=True)
@@ -24,9 +25,9 @@ stemmer = PorterStemmer()
 lemmatizer = WordNetLemmatizer()
 tokenizer_treebank = TreebankWordTokenizer()
 
-MAXLEN = 250  # Harus sesuai saat training CNN
+MAXLEN = 250  # Sesuai saat training CNN
 
-# --- Preprocessing untuk TF-IDF (sesuai training di Colab) ---
+# --- Preprocessing untuk TF-IDF ---
 def preprocess_tfidf(text):
     if not isinstance(text, str):
         return ""
@@ -37,7 +38,7 @@ def preprocess_tfidf(text):
     cleaned = [stemmer.stem(word) for word in tokens if word not in stop_words]
     return ' '.join(cleaned)
 
-# --- Preprocessing untuk CNN (harus sesuai training CNN) ---
+# --- Preprocessing untuk CNN ---
 def preprocess_cnn(text):
     text = BeautifulSoup(str(text), "html.parser").get_text()
     text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
@@ -49,14 +50,19 @@ def preprocess_cnn(text):
     return ' '.join(tokens)
 
 # --- Load Models ---
-model_nb = joblib.load("naive_bayes_model.pkl")
-model_svm = joblib.load("svm_model.pkl")
-model_cnn = load_model("cnn_model.h5")
+try:
+    model_nb = joblib.load("naive_bayes_model.pkl")
+    model_svm = joblib.load("svm_model.pkl")
+    vectorizer = joblib.load("tfidf_vectorizer.pkl")
+except Exception as e:
+    st.error(f"Gagal memuat model TF-IDF: {e}")
 
-vectorizer = joblib.load("tfidf_vectorizer.pkl")
-
-with open("cnn_tokenizer.pkl", "rb") as f:
-    tokenizer = pickle.load(f)
+try:
+    model_cnn = load_model("cnn_model.h5")
+    with open("cnn_tokenizer.pkl", "rb") as f:
+        tokenizer = pickle.load(f)
+except Exception as e:
+    st.error(f"Gagal memuat model CNN: {e}")
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="Analisis Sentimen Film", layout="centered")
@@ -73,23 +79,23 @@ with col1:
         if not text_input.strip():
             st.warning("Teks ulasan tidak boleh kosong.")
         else:
-            if model_choice in ["Naive Bayes", "SVM"]:
-                cleaned = preprocess_tfidf(text_input)
-                vectorized = vectorizer.transform([cleaned])
-                result = model_nb.predict(vectorized)[0] if model_choice == "Naive Bayes" else model_svm.predict(vectorized)[0]
-            else:  # CNN
-                cleaned = preprocess_cnn(text_input)
-                sequence = tokenizer.texts_to_sequences([cleaned])
-                padded = pad_sequences(sequence, maxlen=MAXLEN)
-                pred_prob = model_cnn.predict(padded)[0][0]
-                result = 1 if pred_prob >= 0.5 else 0
+            try:
+                if model_choice in ["Naive Bayes", "SVM"]:
+                    cleaned = preprocess_tfidf(text_input)
+                    if not hasattr(vectorizer, "idf_"):
+                        raise NotFittedError("Vectorizer belum di-fit.")
+                    vectorized = vectorizer.transform([cleaned])
+                    result = model_nb.predict(vectorized)[0] if model_choice == "Naive Bayes" else model_svm.predict(vectorized)[0]
+                else:  # CNN
+                    cleaned = preprocess_cnn(text_input)
+                    sequence = tokenizer.texts_to_sequences([cleaned])
+                    padded = pad_sequences(sequence, maxlen=MAXLEN)
+                    pred_prob = model_cnn.predict(padded)[0][0]
+                    result = 1 if pred_prob >= 0.5 else 0
 
-            label = "Positif" if result == 1 else "Negatif"
-            st.success(f"Hasil Sentimen: **{label}**")
-
-# --- Optional Akurasi (Dummy) ---
-with col2:
-    st.markdown("### 📊 Akurasi Model (dummy):")
-    st.write("- Naive Bayes: 0.85")
-    st.write("- SVM: 0.88")
-    st.write("- CNN: 0.88")
+                label = "Positif" if result == 1 else "Negatif"
+                st.success(f"Hasil Sentimen: **{label}**")
+            except NotFittedError as e:
+                st.error(f"Model belum ter-fit: {e}")
+            except Exception as e:
+                st.error(f"Terjadi kesalahan saat memproses: {e}")
