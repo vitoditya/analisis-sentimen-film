@@ -62,7 +62,7 @@ if os.path.exists("cnn_model.h5") and os.path.exists("cnn_tokenizer.pkl"):
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="Analisis Sentimen Film", layout="centered")
-st.title("🎬 Analisis Sentimen Ulasan Film")
+st.title(" Analisis Sentimen Ulasan Film")
 st.markdown("Masukkan ulasan film, pilih model, dan lihat hasil prediksi sentimennya.")
 
 text_input = st.text_area("Masukkan ulasan film:")
