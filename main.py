@@ -1,101 +1,67 @@
-# main.py
+# streamlit_app.py
 
 import streamlit as st
-import numpy as np
 import re
-import pickle
 import joblib
+import numpy as np
 import nltk
-import os
-from bs4 import BeautifulSoup
 from nltk.corpus import stopwords
-from nltk.stem import PorterStemmer, WordNetLemmatizer
-from nltk.tokenize import TreebankWordTokenizer, word_tokenize
-from tensorflow.keras.preprocessing.sequence import pad_sequences
+from nltk.tokenize import word_tokenize
+from nltk.stem import PorterStemmer
 from tensorflow.keras.models import load_model
-from sklearn.exceptions import NotFittedError
 
-# --- Setup ---
-nltk.download('punkt', quiet=True)
-nltk.download('stopwords', quiet=True)
-nltk.download('wordnet', quiet=True)
+from sklearn.feature_extraction.text import TfidfVectorizer
 
-stop_words = set(stopwords.words('english'))
-stemmer = PorterStemmer()
-lemmatizer = WordNetLemmatizer()
-tokenizer_treebank = TreebankWordTokenizer()
+# Download resource NLTK jika belum ada
+nltk.download('punkt')
+nltk.download('stopwords')
 
-MAXLEN = 250  # Sesuai saat training CNN
-
-# --- Preprocessing untuk TF-IDF ---
-def preprocess_tfidf(text):
-    if not isinstance(text, str):
-        return ""
-    text = BeautifulSoup(text, "html.parser").get_text()
-    text = re.sub(r"[^a-zA-Z']", ' ', text)
-    text = text.lower()
-    tokens = tokenizer_treebank.tokenize(text)
-    cleaned = [stemmer.stem(word) for word in tokens if word not in stop_words]
-    return ' '.join(cleaned)
-
-# --- Preprocessing untuk CNN ---
-def preprocess_cnn(text):
-    text = BeautifulSoup(str(text), "html.parser").get_text()
-    text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
-    text = re.sub(r'@\w+|\#\w+', '', text)
-    text = re.sub(r'[^a-zA-Z\s]', '', text)
-    text = text.lower()
+# --- Fungsi Preprocessing ---
+def preprocess(text):
+    # Cleaning dan Case Folding
+    text = re.sub(r'<.*?>', '', text)  # Hapus tag HTML
+    text = re.sub(r"[^a-zA-Z']", ' ', text).lower()
+    
+    # Tokenisasi
     tokens = word_tokenize(text)
-    tokens = [lemmatizer.lemmatize(word) for word in tokens if word not in stop_words and len(word) > 2]
+    
+    # Stopword Removal dan Stemming
+    stop_words = set(stopwords.words('english'))
+    stemmer = PorterStemmer()
+    tokens = [stemmer.stem(word) for word in tokens if word not in stop_words]
+
     return ' '.join(tokens)
 
-# --- Load Models ---
-try:
-    model_nb = joblib.load("naive_bayes_model.pkl")
-    model_svm = joblib.load("svm_model.pkl")
-    vectorizer = joblib.load("tfidf_vectorizer.pkl")
-except Exception as e:
-    st.error(f"Gagal memuat model TF-IDF: {e}")
+# --- Load Model dan Vectorizer ---
+model_nb = joblib.load("naive_bayes_model.pkl")
+model_svm = joblib.load("svm_model.pkl")
+model_cnn = load_model("cnn_model.h5")
+vectorizer = joblib.load("tfidf_vectorizer.pkl")
 
-try:
-    model_cnn = load_model("cnn_model.h5")
-    with open("cnn_tokenizer.pkl", "rb") as f:
-        tokenizer = pickle.load(f)
-except Exception as e:
-    st.error(f"Gagal memuat model CNN: {e}")
-
-# --- Streamlit UI ---
+# --- UI Streamlit ---
 st.set_page_config(page_title="Analisis Sentimen Film", layout="centered")
 st.title("🎬 Analisis Sentimen Ulasan Film")
-st.markdown("Masukkan ulasan film, pilih model, dan lihat hasil prediksi serta perbandingan performa model.")
+st.markdown("Masukkan ulasan film, pilih model yang ingin kamu gunakan, dan lihat hasil prediksinya.")
 
 text_input = st.text_area("Masukkan ulasan film:")
 model_choice = st.selectbox("Pilih Model", ["Naive Bayes", "SVM", "CNN"])
 
-col1, col2 = st.columns(2)
+if st.button("Analisis"):
+    if not text_input.strip():
+        st.warning("Teks ulasan tidak boleh kosong.")
+    else:
+        # Preprocessing
+        cleaned = preprocess(text_input)
+        vectorized = vectorizer.transform([cleaned])
 
-with col1:
-    if st.button("🔍 Analisis"):
-        if not text_input.strip():
-            st.warning("Teks ulasan tidak boleh kosong.")
-        else:
-            try:
-                if model_choice in ["Naive Bayes", "SVM"]:
-                    cleaned = preprocess_tfidf(text_input)
-                    if not hasattr(vectorizer, "idf_"):
-                        raise NotFittedError("Vectorizer belum di-fit.")
-                    vectorized = vectorizer.transform([cleaned])
-                    result = model_nb.predict(vectorized)[0] if model_choice == "Naive Bayes" else model_svm.predict(vectorized)[0]
-                else:  # CNN
-                    cleaned = preprocess_cnn(text_input)
-                    sequence = tokenizer.texts_to_sequences([cleaned])
-                    padded = pad_sequences(sequence, maxlen=MAXLEN)
-                    pred_prob = model_cnn.predict(padded)[0][0]
-                    result = 1 if pred_prob >= 0.5 else 0
+        # Prediksi
+        if model_choice == "Naive Bayes":
+            result = model_nb.predict(vectorized)[0]
+        elif model_choice == "SVM":
+            result = model_svm.predict(vectorized)[0]
+        else:  # CNN
+            result = model_cnn.predict(vectorized.toarray())
+            result = np.argmax(result, axis=1)[0]  # Ambil kelas dengan skor tertinggi
 
-                label = "Positif" if result == 1 else "Negatif"
-                st.success(f"Hasil Sentimen: *{label}*")
-            except NotFittedError as e:
-                st.error(f"Model belum ter-fit: {e}")
-            except Exception as e:
-                st.error(f"Terjadi kesalahan saat memproses: {e}")
+        label = "Positif" if result == 1 else "Negatif"
+        st.success(f"Hasil Sentimen: **{label}**")
