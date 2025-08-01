@@ -75,7 +75,7 @@ model_choice = st.selectbox("Pilih Model", ["Naive Bayes", "SVM", "CNN"])
 col1, col2 = st.columns(2)
 
 with col1:
-    if st.button("Analisis"):
+    if st.button("🔍 Analisis"):
         if not text_input.strip():
             st.warning("Teks ulasan tidak boleh kosong.")
         else:
